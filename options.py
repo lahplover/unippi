@@ -6,6 +6,7 @@ def get_training_parser():
 
     parser.add_argument("-c", "--train_dataset", type=str, default=None, help="train dataset for train bert")
     parser.add_argument("-t", "--test_dataset", type=str, default=None, help="test set for evaluate train set")
+    parser.add_argument("--dmpeak_dataset", type=str, default=None, help="dmpeak data path")
 
     # parser.add_argument("-v", "--vocab_path", required=True, type=str, help="built vocab model path with bert-vocab")
     parser.add_argument("-o", "--output_path", type=str, default='./', help="ex)output/bert.model")

@@ -17,26 +17,26 @@ def load_dataset(args):
         print("Loading Train Dataset", train_data_path)
         train_dataset = DatasetPDB(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                    relative_3d=args.relative_3d,
-                                   relative_3d_size=10, relative_3d_step=2,
-                                   corpus_lines=args.corpus_lines, on_memory=args.on_memory)
+                                   relative_3d_size=10, relative_3d_step=2
+                                   )
 
         print("Loading Test Dataset", args.test_dataset)
         test_dataset = DatasetPDB(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                   relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d, on_memory=args.on_memory) \
+                                  relative_3d=args.relative_3d) \
             if args.test_dataset is not None else None
     elif args.task == 'pfam':
         train_data_path = args.train_dataset
         print("Loading Train Dataset", train_data_path)
         train_dataset = DatasetSeq(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                    relative_3d=args.relative_3d,
-                                   relative_3d_size=10, relative_3d_step=2,
-                                   corpus_lines=args.corpus_lines, on_memory=args.on_memory)
+                                   relative_3d_size=10, relative_3d_step=2
+                                   )
 
         print("Loading Test Dataset", args.test_dataset)
         test_dataset = DatasetSeq(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                   relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d, on_memory=args.on_memory) \
+                                  relative_3d=args.relative_3d) \
             if args.test_dataset is not None else None
     elif args.task == 'interfam':
         train_data_path = args.train_dataset
@@ -44,12 +44,12 @@ def load_dataset(args):
         train_dataset = DatasetInterDomain(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                    relative_3d=args.relative_3d,
                                    relative_3d_size=10, relative_3d_step=2,
-                                   corpus_lines=args.corpus_lines, on_memory=args.on_memory)
+                                   corpus_lines=args.corpus_lines)
 
         print("Loading Test Dataset", args.test_dataset)
         test_dataset = DatasetInterDomain(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
                                   relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d, on_memory=args.on_memory) \
+                                  relative_3d=args.relative_3d) \
             if args.test_dataset is not None else None
     else:
         raise ValueError('unknown task name')

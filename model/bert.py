@@ -132,7 +132,7 @@ class BERT(nn.Module):
         batch_size, seq_len = x.size()
 
         if language_model:
-            # attention masking for language model
+            # attention masking for language model, keep the lower-half of the matrix
             mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, requires_grad=False))
             mask = mask.unsqueeze(0).unsqueeze(0)
         else:

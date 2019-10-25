@@ -8,8 +8,8 @@ import numpy as np
 
 class DatasetPDB(Dataset):
     def __init__(self, corpus_path, seq_len, seq_mode='one',
-                 relative_3d=False, relative_3d_size=10, relative_3d_step=2,
-                 corpus_lines=10, on_memory=True):
+                 relative_3d=False, relative_3d_size=10, relative_3d_step=2
+                 ):
         # self.vocab = vocab
         amino_acids = pd.read_csv('data/amino_acids.csv')
         self.vocab = {x: y for x, y in zip(amino_acids.AA, amino_acids.idx)}
@@ -21,8 +21,6 @@ class DatasetPDB(Dataset):
 
         self.seq_len = seq_len
         self.seq_mode = seq_mode
-        self.on_memory = on_memory
-        self.num_seq = corpus_lines
         self.corpus_path = corpus_path
         self.relative_3d = relative_3d
         self.relative_3d_size = relative_3d_size

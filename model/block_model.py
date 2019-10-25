@@ -53,6 +53,7 @@ class MaskedLanguageModel(nn.Module):
         self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
+        # (N, S, E)
         x = self.softmax(self.linear(x))
         return x
 

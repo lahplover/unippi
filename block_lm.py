@@ -18,13 +18,13 @@ def load_dataset(args):
         train_dataset = DatasetSeqBlock(train_data_path, seq_len=args.seq_len,
                                         relative_3d=args.relative_3d,
                                         relative_3d_size=10, relative_3d_step=2,
-                                        )
+                                        dmpeak_data_path=args.dmpeak_dataset)
 
         print("Loading Test Dataset", args.test_dataset)
         test_dataset = DatasetSeqBlock(args.test_dataset, seq_len=args.seq_len,
                                        relative_3d=args.relative_3d,
                                        relative_3d_size=10, relative_3d_step=2,
-                                       ) \
+                                       dmpeak_data_path=args.dmpeak_dataset) \
             if args.test_dataset is not None else None
     elif args.task == 'interfam':
         train_data_path = args.train_dataset
