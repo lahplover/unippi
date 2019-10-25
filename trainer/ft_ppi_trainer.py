@@ -6,11 +6,11 @@ from optim_schedule import ScheduledOptim
 from tqdm import tqdm
 
 
-class DMTrainer:
+class FTPPITrainer:
     """
     """
 
-    def __init__(self, writer, model, no_msa_index,
+    def __init__(self, writer, model,
                  train_dataloader, test_dataloader=None,
                  lr=1e-4, betas=(0.9, 0.999), weight_decay=0.01,
                  warmup_steps=1000,
@@ -44,15 +44,7 @@ class DMTrainer:
         else:
             self.optim_schedule = ScheduledOptim(self.optim, n_warmup_steps=warmup_steps, init_lr=lr)
 
-        # Using Negative Log Likelihood Loss function for predicting the masked_token
-        # self.no_msa_index = no_msa_index
-        # dm_weight = (no_msa_index - torch.arange(no_msa_index+1, device=device,
-        #                                          requires_grad=False, dtype=torch.float))**2
-        # self.loss_dm = nn.NLLLoss(weight=dm_weight, ignore_index=no_msa_index)
-        dm_weight = torch.tensor([100]*5 + [50]*5 + [1, 0],
-                                 device=device, requires_grad=False, dtype=torch.float)
-        self.loss_dm = nn.NLLLoss(weight=dm_weight)
-        # self.loss_mse = nn.MSELoss()
+        self.loss = nn.NLLLoss()
 
         self.log_freq = log_freq
         self.writer = writer
@@ -89,10 +81,10 @@ class DMTrainer:
             # 0. batch_data will be sent into the device(GPU or cpu)
             data = {key: value.to(self.device) for key, value in data.items()}
 
-            dist_mat_output = self.model(data["seq_input"], data["segment_label"],
-                                         distance_matrix=data["dist_mat_input"])
+            next_sent_output = self.model(data["seq_input"], data["segment_label"],
+                                          distance_matrix=data["dist_mat_input"])
 
-            loss = self.loss_dm(dist_mat_output, data["dist_mat_target"])
+            loss = self.loss(next_sent_output, data["is_next"])
 
             # 3. backward and optimization only in train
             if train:
@@ -107,12 +99,8 @@ class DMTrainer:
                     self.optim_schedule.step_and_update_lr()
 
             # prediction accuracy
-            # idx = (data["dist_mat_target"] != self.no_msa_index)
-            idx = (data["dist_mat_target"] <= 10)
-            # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx])
-            # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx].eq(data["bert_label"][idx]))
-            correct = dist_mat_output.argmax(dim=1).eq(data["dist_mat_target"])[idx].sum().item()
-            batch_n_element = data["dist_mat_target"][idx].nelement()
+            correct = next_sent_output.argmax(dim=-1).eq(data["is_next"]).sum().item()
+            batch_n_element = data["is_next"].nelement()
             total_correct += correct
             total_element += batch_n_element
 

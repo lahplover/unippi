@@ -5,3 +5,4 @@ from .inter_dm_pdb import DatasetPDBInter
 from .inter_dm_interfam import DatasetPDBInterDomain
 from .inter_dm_pfam import DatasetSeqInter
 from .block_lm_pfam import DatasetSeqBlock
+from .ft_interfam import DatasetFTInterFam

@@ -2,10 +2,9 @@ import torch.nn as nn
 from .bert import BERT
 
 
-class BERTLM(nn.Module):
+class FTPPI(nn.Module):
     """
-    BERT Language Model
-    Next Sentence Prediction Model + Masked Language Model
+    finetune the Next Sentence Prediction Model
     """
 
     def __init__(self, vocab_size, hidden=128, n_layers=1, attn_heads=8,
@@ -33,23 +32,17 @@ class BERTLM(nn.Module):
                          relative_3d=relative_3d,
                          relative_3d_vocab_size=relative_3d_vocab_size)
 
-        self.mask_lm = MaskedLanguageModel(hidden, vocab_size)
-        if seq_mode == 'two':
-            self.next_sentence = NextSentencePrediction(hidden)
+        self.next_sentence = NextSentencePrediction(hidden)
 
     def forward(self, x, segment_label=None, distance_matrix=None):
         x = self.bert(x, segment_label, distance_matrix)
-        if self.seq_mode == 'two':
-            return self.next_sentence(x), self.mask_lm(x)
-        elif self.seq_mode == 'one':
-            return self.mask_lm(x)
-        else:
-            raise ValueError('seq_mode should be two or one.')
+        return self.next_sentence(x)
 
 
 class NextSentencePrediction(nn.Module):
     """
     2-class classification model : is_next, is_not_next
+    x: (N, S, E) -> (N, E) -> (N, 2)
     """
 
     def __init__(self, hidden):
@@ -61,23 +54,7 @@ class NextSentencePrediction(nn.Module):
         self.softmax = nn.LogSoftmax(dim=-1)
 
     def forward(self, x):
-        return self.softmax(self.linear(x[:, 0]))
-
-
-class MaskedLanguageModel(nn.Module):
-    """
-    predicting origin token from masked input sequence
-    n-class classification problem, n-class = vocab_size
-    """
-
-    def __init__(self, hidden, vocab_size):
-        """
-        :param hidden: output size of BERT model
-        :param vocab_size: total vocab size
-        """
-        super().__init__()
-        self.linear = nn.Linear(hidden, vocab_size)
-        self.softmax = nn.LogSoftmax(dim=-1)
-
-    def forward(self, x):
+        x = x[:, 0]
         return self.softmax(self.linear(x))
+
+

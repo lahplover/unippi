@@ -78,17 +78,19 @@ class DatasetInterDomain(Dataset):
                     t1_dist_mat = dist_mat[len(t2):, len(t2):]
         else:
             is_next_label = 0
+            # fixed bug, add _t1 and _t2
             item2 = np.random.randint(0, self.num_seq)
-            t1, t2 = self.seq_a[item], self.seq_b[item2]
+            t1, _t2 = self.seq_a[item], self.seq_b[item]
+            _t1, t2 = self.seq_a[item2], self.seq_b[item2]
             if self.relative_3d:
                 dist_mat = self._get_clipped_dist_mat(item)
                 if self.seg_order_in_dm[item] == 'ab':
                     t1_dist_mat = dist_mat[:len(t1), :len(t1)]
                 else:
-                    t1_dist_mat = dist_mat[len(t2):, len(t2):]
+                    t1_dist_mat = dist_mat[len(_t2):, len(_t2):]
                 dist_mat = self._get_clipped_dist_mat(item2)
-                if self.seg_order_in_dm[item] == 'ab':
-                    t2_dist_mat = dist_mat[len(t1):, len(t1):]
+                if self.seg_order_in_dm[item2] == 'ab':
+                    t2_dist_mat = dist_mat[len(_t1):, len(_t1):]
                 else:
                     t2_dist_mat = dist_mat[:len(t2), :len(t2)]
 
