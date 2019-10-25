@@ -60,7 +60,8 @@ class BERT(nn.Module):
                  relative_attn=True,
                  relation_embed_size=16,
                  relative_1d=True, max_relative_1d_positions=10,
-                 relative_3d=False, relative_3d_vocab_size=10):
+                 relative_3d=False, relative_3d_vocab_size=10,
+                 relative_attention_constrained=True):
         """
         :param vocab_size: vocab_size of total words
         :param hidden: BERT model hidden size
@@ -73,6 +74,7 @@ class BERT(nn.Module):
         self.hidden = hidden
         self.n_layers = n_layers
         self.attn_heads = attn_heads
+        self.relative_attention_constrained = relative_attention_constrained
 
         # paper noted they used 4*hidden_size for ff_network_hidden_size
         self.feed_forward_hidden = hidden * 4
@@ -92,14 +94,22 @@ class BERT(nn.Module):
             self.relation_embedding = None
 
         # multi-layers transformer blocks, deep network
-        self.transformer_blocks = nn.ModuleList(
-            [TransformerEncoderLayer(hidden, attn_heads, hidden * 4, dropout, relative_attn, relation_embed_size)
-             for _ in range(n_layers)])
+        if not self.relative_attention_constrained:
+            self.transformer_blocks = nn.ModuleList(
+                [TransformerEncoderLayer(hidden, attn_heads, hidden * 4, dropout, relative_attn, relation_embed_size)
+                 for _ in range(n_layers)])
+        else:
+            module_list = [TransformerEncoderLayer(hidden, attn_heads, hidden * 4, dropout, relative_attention=False),
+                           TransformerEncoderLayer(hidden, attn_heads, hidden * 4, dropout, relative_attention=False)]
+            for _ in range(n_layers-2):
+                module_list.append(TransformerEncoderLayer(hidden, attn_heads, hidden * 4, dropout,
+                                                           relative_attn, relation_embed_size))
+            self.transformer_blocks = nn.ModuleList(module_list)
         # encoder_layer = nn.TransformerEncoderLayer(d_model=hidden, nhead=attn_heads,
         #                                            dim_feedforward=hidden*4, dropout=dropout)
         # self.transformer_encoder = nn.TransformerEncoder(encoder_layer=encoder_layer, num_layers=n_layers)
 
-    def forward(self, x, segment_info=None, distance_matrix=None):
+    def forward(self, x, segment_info=None, distance_matrix=None, language_model=False):
         """
         :param x: [N, S]
         :param segment_info: [N, S]
@@ -120,9 +130,15 @@ class BERT(nn.Module):
         # x = x.transpose(0, 1)  # (S, N, E) -> (N, S, E)
 
         batch_size, seq_len = x.size()
-        # attention masking for padded token
-        # torch.ByteTensor([batch_size, 1, seq_len, seq_len)
-        mask = (x > 0).unsqueeze(1).repeat(1, seq_len, 1).unsqueeze(1)
+
+        if language_model:
+            # attention masking for language model
+            mask = torch.tril(torch.ones((seq_len, seq_len), device=x.device, requires_grad=False))
+            mask = mask.unsqueeze(0).unsqueeze(0)
+        else:
+            # attention masking for padded token
+            # torch.ByteTensor([batch_size, 1, seq_len, seq_len)
+            mask = (x > 0).unsqueeze(1).repeat(1, seq_len, 1).unsqueeze(1)
 
         # embedding the indexed sequence to sequence of vectors
         x = self.embedding(x, segment_info)  # [N, S, E]
@@ -135,5 +151,13 @@ class BERT(nn.Module):
         # running over multiple transformer blocks
         for transformer in self.transformer_blocks:
             x = transformer.forward(x, mask, relation_bias_matrix)
+
+        # i = 0
+        # for transformer in self.transformer_blocks:
+        #     if i < 2:
+        #         x = transformer.forward(x, mask, relation_bias_matrix)
+        #     else:
+        #         x = transformer.forward(x, mask)
+        #     i += 1
 
         return x

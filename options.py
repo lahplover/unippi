@@ -26,17 +26,18 @@ def get_training_parser():
     parser.add_argument("--relative_attn", action='store_true', default=False, help="use relative attention")
     parser.add_argument("--relative_1d", action='store_true', default=False, help="relative 1d position")
     parser.add_argument("--relative_3d", action='store_true', default=False, help="relative 3d attention")
+    parser.add_argument("--target_intra_dm", action='store_true', default=False, help="use intra_dm as training target")
 
     parser.add_argument("-hs", "--hidden", type=int, default=256, help="hidden size of transformer model")
     parser.add_argument("-l", "--layers", type=int, default=1, help="number of layers")
     parser.add_argument("-a", "--attn_heads", type=int, default=8, help="number of attention heads")
     parser.add_argument("-s", "--seq_len", type=int, default=12, help="maximum sequence len")
 
-    parser.add_argument("-cl", "--corpus_lines", type=int, default=1000, help="total number of lines in corpus")
+    # parser.add_argument("-cl", "--corpus_lines", type=int, default=1000, help="total number of lines in corpus")
     parser.add_argument("-b", "--batch_size", type=int, default=64, help="number of batch_size")
     parser.add_argument("-e", "--epochs", type=int, default=10, help="number of epochs")
     parser.add_argument("-w", "--num_workers", type=int, default=0, help="dataloader worker size")
-    parser.add_argument("--on_memory", action='store_true', default=False, help="Loading on memory: true or false")
+    # parser.add_argument("--on_memory", action='store_true', default=False, help="Loading on memory: true or false")
 
     parser.add_argument("--log_freq", type=int, default=10, help="printing loss every n iter: setting n")
     parser.add_argument("--log_dir", type=str, default='./runs', help="directory for tensorboard log")

@@ -6,8 +6,8 @@ import pandas as pd
 import numpy as np
 
 
-class DatasetPDB(Dataset):
-    def __init__(self, corpus_path, seq_len, seq_mode='one',
+class DatasetInterDomain(Dataset):
+    def __init__(self, corpus_path, seq_len, encoding="utf-8", seq_mode='one',
                  relative_3d=False, relative_3d_size=10, relative_3d_step=2,
                  corpus_lines=10, on_memory=True):
         # self.vocab = vocab
@@ -17,13 +17,14 @@ class DatasetPDB(Dataset):
         self.vocab['mask_index'] = 21
         self.vocab['sos_index'] = 22
         self.vocab['eos_index'] = 23
-        # self.vocab['unk_index'] = 23
+        self.vocab['unk_index'] = 24
 
         self.seq_len = seq_len
         self.seq_mode = seq_mode
         self.on_memory = on_memory
         self.num_seq = corpus_lines
         self.corpus_path = corpus_path
+        self.encoding = encoding
         self.relative_3d = relative_3d
         self.relative_3d_size = relative_3d_size
         self.relative_3d_step = relative_3d_step
@@ -45,103 +46,54 @@ class DatasetPDB(Dataset):
         #     self.corpus_lines = len(self.lines)
 
         df = pd.read_pickle(corpus_path)
-        df.sort_values(by='seq', ascending=True, inplace=True)
-        self.seq = df['seq'].values
-        self.slen = df['seq_len'].values
-        self.num_seq = len(self.slen)
-        self.num_item_two = int(0.1 * self.num_seq)
+        # df.sort_values(by='seq', ascending=True, inplace=True)
+        self.seq_a = df['seg_a'].values
+        self.seq_b = df['seg_b'].values
+
+        # self.slen = df['seq_len'].values
+        self.num_seq = len(self.seq_a)
+        # self.num_item_two = int(0.1 * self.num_seq)
 
         if relative_3d:
-            # df_dist_mat = pd.read_pickle('data/pf00400_dist_mat.pkl.gz',  compression='gzip')
-            # self.dist_mat_dict = {x: y for x, y in zip(df_dist_mat['seq'], df_dist_mat['dist_mat'])}
-            self.dist_mat_dict = {x: y for x, y in zip(df['seq'], df['dist_mat'])}
+            self.dist_mat_array = df['dist_mat'].values
+            self.seg_order_in_dm = df['seg_order_in_dm'].values
 
     def __len__(self):
         return self.num_seq
 
     def __getitem__(self, item):
-        if self.seq_mode == 'one':
-            output = self._get_item_one(item)
-        elif self.seq_mode == 'two':
-            output = self._get_item_two(item)
-        else:
-            raise ValueError('seq_mode should be one/two.')
+        output = self._get_item_two(item)
         for key, value in output.items():
-            output[key] = torch.tensor(value)
-        return output
-
-    def _get_item_one(self, item):
-        t1 = self.seq[item]
-
-        t1_random, t1_label = self.random_word(t1)
-        bert_input = [self.vocab['sos_index']] + t1_random
-        bert_label = [self.vocab['pad_index']] + t1_label
-
-        # crop long seq or pad short seq
-        if len(bert_input) > self.seq_len:
-            # start_idx = np.random.randint(0, len(bert_input) - self.seq_len)
-            start_idx = 0
-            bert_input = bert_input[start_idx:start_idx+self.seq_len]
-            bert_label = bert_label[start_idx:start_idx+self.seq_len]
-        else:
-            padding = [self.vocab['pad_index'] for _ in range(self.seq_len - len(bert_input))]
-            bert_input.extend(padding), bert_label.extend(padding)
-        assert(len(bert_input) == self.seq_len)
-
-        if self.relative_3d:
-            t1_dist_mat = self._get_clipped_dist_mat(t1)
-            # pad for 'sos_index'
-            t1_dist_mat = np.pad(t1_dist_mat, ((1, 0), (1, 0)), 'constant', constant_values=self.vocab_3d['sos_index'])
-            # crop long seq or pad for short seq
-            if t1_dist_mat.shape[0] >= self.seq_len:
-                # start_idx = np.random.randint(0, len(bert_input) - self.seq_len)
-                start_idx = 0
-                t1_dist_mat = t1_dist_mat[start_idx:start_idx+self.seq_len, start_idx:start_idx+self.seq_len]
-            else:
-                pad_dist_mat = self.seq_len - t1_dist_mat.shape[0]
-                t1_dist_mat = np.pad(t1_dist_mat, ((0, pad_dist_mat), (0, pad_dist_mat)),
-                                     'constant', constant_values=self.vocab_3d['pad_index'])
-            assert (t1_dist_mat.shape[0] == self.seq_len)
-        else:
-            t1_dist_mat = 0
-        output = {"bert_input": bert_input,
-                  "bert_label": bert_label,
-                  "dist_mat": t1_dist_mat}
-        # print(output)
+            output[key] = torch.tensor(value, requires_grad=False)
         return output
 
     def _get_item_two(self, item):
         if random.random() > 0.5:
             is_next_label = 1
-            t12 = self.seq[item]
-            t12_len = len(t12)
-            i_split = np.random.randint(int(t12_len/3), int(t12_len*2/3))
-            t1, t2 = t12[:i_split], t12[i_split:]
+            t1, t2 = self.seq_a[item], self.seq_b[item]
             if self.relative_3d:
-                t12_dist_mat = self._get_clipped_dist_mat(t12)
-                t1_dist_mat = t12_dist_mat[:i_split, :i_split]
-                t2_dist_mat = t12_dist_mat[i_split:, i_split:]
+                dist_mat = self._get_clipped_dist_mat(item)
+                if self.seg_order_in_dm[item] == 'ab':
+                    t1_dist_mat = dist_mat[:len(t1), :len(t1)]
+                    t2_dist_mat = dist_mat[len(t1):, len(t1):]
+                else:
+                    t2_dist_mat = dist_mat[:len(t2), :len(t2)]
+                    t1_dist_mat = dist_mat[len(t2):, len(t2):]
         else:
             is_next_label = 0
-            t1a = self.seq[item]
-            t1a_len = self.slen[item]
-            t1_split = np.random.randint(int(t1a_len/3), int(t1a_len*2/3))
-
-            # get another longer sequence, cut the tail so that len(t1_tail) = len(t2_tail)
-            # ind = (self.slen >= t1a_len) & (self.slen < t1a_len + 20)
-            # seq2 = self.seq[ind]
-            # t2a = seq2[random.randrange(len(seq2))]
-            item2 = item + np.random.randint(1, self.num_item_two)
-            item2 = min(item2, self.num_seq-1)
-            t2a = self.seq[item2]
-            t2a_len = len(t2a)
-            t2_split = t2a_len - (t1a_len - t1_split)
-            t1, t2 = t1a[:t1_split], t2a[t2_split:]
+            item2 = np.random.randint(0, self.num_seq)
+            t1, t2 = self.seq_a[item], self.seq_b[item2]
             if self.relative_3d:
-                t1a_dist_mat = self._get_clipped_dist_mat(t1a)
-                t2a_dist_mat = self._get_clipped_dist_mat(t2a)
-                t1_dist_mat = t1a_dist_mat[:t1_split, :t1_split]
-                t2_dist_mat = t2a_dist_mat[t2_split:, t2_split:]
+                dist_mat = self._get_clipped_dist_mat(item)
+                if self.seg_order_in_dm[item] == 'ab':
+                    t1_dist_mat = dist_mat[:len(t1), :len(t1)]
+                else:
+                    t1_dist_mat = dist_mat[len(t2):, len(t2):]
+                dist_mat = self._get_clipped_dist_mat(item2)
+                if self.seg_order_in_dm[item] == 'ab':
+                    t2_dist_mat = dist_mat[len(t1):, len(t1):]
+                else:
+                    t2_dist_mat = dist_mat[:len(t2), :len(t2)]
 
         t1_random, t1_label = self.random_word(t1)
         t2_random, t2_label = self.random_word(t2)
@@ -197,13 +149,13 @@ class DatasetPDB(Dataset):
                   "dist_mat": t12_dist_mat}
         return output
 
-    def _get_clipped_dist_mat(self, t1):
-        t1_dist_mat = self.dist_mat_dict[t1]
-        t1_dist_mat[t1_dist_mat == -1] = -1 * self.relative_3d_step  # positions with no distances from MSA
+    def _get_clipped_dist_mat(self, item):
+        t1_dist_mat = self.dist_mat_array[item]
+        # t1_dist_mat[t1_dist_mat == -1] = -1 * self.relative_3d_step  # positions with no distances from MSA
         # t1_dist_mat_clipped = torch.clamp(t1_dist_mat, max=self.max_relative_3d)
         t1_dist_mat_clipped = np.clip(t1_dist_mat, a_min=None, a_max=self.max_relative_3d)
         t1_dist_mat = (t1_dist_mat_clipped // self.relative_3d_step).astype(int)
-        t1_dist_mat[t1_dist_mat == -1] = self.vocab_3d['no_msa']  # positions with no distances from MSA
+        # t1_dist_mat[t1_dist_mat == -1] = self.vocab_3d['no_msa']  # positions with no distances from MSA
         return t1_dist_mat
 
     def random_word(self, sentence):
@@ -248,6 +200,12 @@ class DatasetPDB(Dataset):
     #
     #         t1 = line[:-1]
     #         return t1
+
+
+if __name__ == '__main__':
+    train_dataset = DatasetInterDomain('data/pdb_interDM_unique_diff_domain_sample.pkl',
+                                       seq_len=256, seq_mode='two',
+                                       relative_3d=True)
 
 
 

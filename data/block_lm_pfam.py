@@ -38,10 +38,11 @@ def _get_dist_mat_inner_loop(sindel, h, dist_mat, dist_mat_hmm):
     return dist_mat
 
 
-class DatasetSeqInter(Dataset):
+class DatasetSeqBlock(Dataset):
     def __init__(self, corpus_path, seq_len,
                  relative_3d=False, relative_3d_size=10, relative_3d_step=2,
-                 target_intra_dm=False):
+                 dmpeak_data_path='data/seq_unalign_indel_all_dmpeak_only_sample.pkl',
+                 ):
         # self.vocab = vocab
         amino_acids = pd.read_csv('data/amino_acids.csv')
         self.vocab = {x: y for x, y in zip(amino_acids.AA, amino_acids.idx)}
@@ -57,7 +58,6 @@ class DatasetSeqInter(Dataset):
         self.relative_3d_size = relative_3d_size
         self.relative_3d_step = relative_3d_step
         self.max_relative_3d = relative_3d_size * relative_3d_step
-        self.target_intra_dm = target_intra_dm
         self.vocab_3d = {x: x for x in np.arange(relative_3d_size+1)}
         self.vocab_3d['no_msa'] = relative_3d_size + 1
         self.vocab_3d['pad_index'] = relative_3d_size + 2
@@ -68,15 +68,17 @@ class DatasetSeqInter(Dataset):
         df = pd.read_csv(corpus_path)
         # df.sort_values(by='seq', ascending=True, inplace=True)
         self.seq = df['seq_unalign'].values
-        self.slen = df['seq_len'].values
-        self.num_seq = len(self.slen)
-        self.num_item_two = int(0.1 * self.num_seq)
-
-        self.seq_indel = df['seq_indel'].values
         self.fam = df['pfam_acc'].values
-        df_dm_hmm = pd.read_pickle('data/distmat_hmm_pfam_all.pkl')
-        # all pfam_acc in self.fam have one item in distmat_hmm_pfam_all.pkl
-        self.dist_mat_dict = {x: y for x, y in zip(df_dm_hmm['fam'], df_dm_hmm['distmat'])}
+        self.num_seq = len(self.fam)
+
+        df_dmpeak = pd.read_pickle(dmpeak_data_path)
+        self.dmpeak = df_dmpeak['dmpeak'].values
+
+        if self.relative_3d:
+            self.seq_indel = df['seq_indel'].values
+            df_dm_hmm = pd.read_pickle('data/distmat_hmm_pfam_all.pkl')
+            # all pfam_acc in self.fam have one item in distmat_hmm_pfam_all.pkl
+            self.dist_mat_dict = {x: y for x, y in zip(df_dm_hmm['fam'], df_dm_hmm['distmat'])}
 
     def __len__(self):
         return self.num_seq
@@ -88,19 +90,10 @@ class DatasetSeqInter(Dataset):
         return output
 
     def _get_item_two(self, item):
+        dmpeak_list = self.dmpeak[item]
+        i, j = dmpeak_list[np.random.randint(0, len(dmpeak_list))]
         t12 = self.seq[item]
-        t12_len = len(t12)
-        i_split = np.random.randint(int(t12_len/3), int(t12_len*2/3))
-        t1, t2 = t12[:i_split], t12[i_split:]
-
-        t12_fam = self.fam[item]
-        # print(t12_fam)
-        t12_indel = self.seq_indel[item]
-        dist_mat = self._get_clipped_dist_mat(t12_fam, t12, t12_indel)
-        t1_dist_mat = dist_mat[:i_split, :i_split]
-        t2_dist_mat = dist_mat[i_split:, i_split:]
-        dist_mat_inter = dist_mat[:i_split, i_split:]
-        # print(dist_mat_inter)
+        t1, t2 = t12[i:i+32], t12[j:j+32]
 
         t1 = self.tokenizer(t1)
         t2 = self.tokenizer(t2)
@@ -109,28 +102,32 @@ class DatasetSeqInter(Dataset):
         t1 = [self.vocab['sos_index']] + t1 + [self.vocab['eos_index']]
         t2 = t2 + [self.vocab['eos_index']]
 
-        t1_dist_mat = np.pad(t1_dist_mat, ((1, 1), (1, 1)), 'constant',
-                             constant_values=((self.vocab_3d['sos_index'], self.vocab_3d['eos_index']),
-                                              (self.vocab_3d['sos_index'], self.vocab_3d['eos_index'])))
-        t2_dist_mat = np.pad(t2_dist_mat, ((0, 1), (0, 1)), 'constant', constant_values=self.vocab_3d['eos_index'])
-
         segment_label = ([1 for _ in range(len(t1))] + [2 for _ in range(len(t2))])
 
         seq_input = (t1 + t2)
         t12_len = len(seq_input)
 
-        dist_mat_target = np.ones((t12_len, t12_len), dtype=int) * self.vocab_3d['no_msa']
-        dist_mat_target[1:t1_dist_mat.shape[0]-1, t1_dist_mat.shape[0]:-1] = dist_mat_inter
-
-        if self.target_intra_dm:
-            dist_mat_target[1:t1_dist_mat.shape[0]-1, 1:t1_dist_mat.shape[0]-1] = t1_dist_mat[1:-1, 1:-1]
-            dist_mat_target[t1_dist_mat.shape[0]:-1, t1_dist_mat.shape[0]:-1] = t2_dist_mat[:-1, :-1]
-            dist_mat_target[t1_dist_mat.shape[0]:-1, 1:t1_dist_mat.shape[0]-1] = dist_mat_inter.T
-
         if self.relative_3d:
-            dist_mat_input = np.ones((t12_len, t12_len), dtype=int) * self.vocab_3d['inter_12']
-            dist_mat_input[:t1_dist_mat.shape[0], :t1_dist_mat.shape[0]] = t1_dist_mat
-            dist_mat_input[t1_dist_mat.shape[0]:, t1_dist_mat.shape[0]:] = t2_dist_mat
+            t12_fam = self.fam[item]
+            # print(t12_fam)
+            t12_indel = self.seq_indel[item]
+            dist_mat = self._get_clipped_dist_mat(t12_fam, t12, t12_indel)
+
+            t1_dist_mat = dist_mat[i:i+32, i:i+32]
+            t2_dist_mat = dist_mat[j:j+32, j:j+32]
+            dist_mat_inter = dist_mat[i:i+32, j:j+32]
+            # print(dist_mat_inter)
+
+            t1_dist_mat = np.pad(t1_dist_mat, ((1, 1), (1, 1)), 'constant',
+                                 constant_values=((self.vocab_3d['sos_index'], self.vocab_3d['eos_index']),
+                                                  (self.vocab_3d['sos_index'], self.vocab_3d['eos_index'])))
+            t2_dist_mat = np.pad(t2_dist_mat, ((0, 1), (0, 1)), 'constant', constant_values=self.vocab_3d['eos_index'])
+
+            dist_mat_input = np.ones((t12_len, t12_len), dtype=int) * self.vocab_3d['no_msa']
+            dist_mat_input[1:t1_dist_mat.shape[0]-1, 1:t1_dist_mat.shape[0]-1] = t1_dist_mat[1:-1, 1:-1]
+            dist_mat_input[t1_dist_mat.shape[0]:-1, t1_dist_mat.shape[0]:-1] = t2_dist_mat[:-1, :-1]
+            dist_mat_input[1:t1_dist_mat.shape[0]-1, t1_dist_mat.shape[0]:-1] = dist_mat_inter
+            dist_mat_input[t1_dist_mat.shape[0]:-1, 1:t1_dist_mat.shape[0]-1] = dist_mat_inter.T
         else:
             dist_mat_input = 0
 
@@ -140,23 +137,21 @@ class DatasetSeqInter(Dataset):
             segment_label = segment_label[0:self.seq_len]
             if self.relative_3d:
                 dist_mat_input = dist_mat_input[0:self.seq_len, 0:self.seq_len]
-            dist_mat_target = dist_mat_target[0:self.seq_len, 0:self.seq_len]
-
         else:
             padding = [self.vocab['pad_index'] for _ in range(self.seq_len - len(seq_input))]
             seq_input.extend(padding), segment_label.extend(padding)
-
             pad_dist_mat = self.seq_len - t12_len
             if self.relative_3d:
                 dist_mat_input = np.pad(dist_mat_input, ((0, pad_dist_mat), (0, pad_dist_mat)),
                                         'constant', constant_values=self.vocab_3d['pad_index'])
-            dist_mat_target = np.pad(dist_mat_target, ((0, pad_dist_mat), (0, pad_dist_mat)),
-                                     'constant', constant_values=self.vocab_3d['no_msa'])
+
+        seq_target = seq_input[1:] + [self.vocab['eos_index']]
 
         output = {"seq_input": seq_input,
-                  "dist_mat_input": dist_mat_input,
+                  "seq_target": seq_target,
                   "segment_label": segment_label,
-                  "dist_mat_target": dist_mat_target}
+                  "dist_mat_input": dist_mat_input,
+                  }
         return output
 
     def _get_clipped_dist_mat(self, fam, seq, seq_indel):
@@ -219,7 +214,7 @@ def plot_dm(dataset):
 
 
 if __name__ == '__main__':
-    dataset = DatasetSeqInter('data/seq_unalign_indel_all_cut_sample.csv', seq_len=256, relative_3d=False)
+    dataset = DatasetSeqBlock('data/seq_unalign_indel_all_dmpeak_sample.csv', seq_len=67, relative_3d=True)
 
 
 

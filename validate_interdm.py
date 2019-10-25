@@ -15,16 +15,19 @@ def load_dataset(args):
     print("Loading Test Dataset", args.test_dataset)
     if args.task == 'pdb':
         test_dataset = DatasetPDBInter(args.test_dataset, seq_len=args.seq_len,
-                                  relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d, on_memory=args.on_memory)
+                                       relative_3d=args.relative_3d,
+                                       relative_3d_size=10, relative_3d_step=2,
+                                       target_intra_dm=args.target_intra_dm)
     elif args.task == 'pfam':
         test_dataset = DatasetSeqInter(args.test_dataset, seq_len=args.seq_len,
-                                  relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d, on_memory=args.on_memory)
+                                       relative_3d=args.relative_3d,
+                                       relative_3d_size=10, relative_3d_step=2,
+                                       target_intra_dm=args.target_intra_dm)
     elif args.task == 'interfam':
         test_dataset = DatasetPDBInterDomain(args.test_dataset, seq_len=args.seq_len,
-                                          relative_3d_size=10, relative_3d_step=2,
-                                          relative_3d=args.relative_3d, on_memory=args.on_memory)
+                                             relative_3d=args.relative_3d,
+                                             relative_3d_size=10, relative_3d_step=2,
+                                             target_intra_dm=args.target_intra_dm)
     else:
         raise ValueError('unknown task name')
     return test_dataset
@@ -104,20 +107,17 @@ else:
                                      distance_matrix=data["dist_mat_input"])
         loss = loss_dm(dist_mat_output, data["dist_mat_target"])
         print(loss)
-
-        break
-
-    a = dist_mat_output[0].argmax(dim=0)
-    b = data['dist_mat_input'][0]
-    c = data['dist_mat_target'][0]
-
-    pl.figure()
-    pl.imshow(a)
-    pl.figure()
-    pl.imshow(b)
-    pl.figure()
-    pl.imshow(c)
-
+        for j in [0, 8]:
+            fig = pl.figure()
+            ax = pl.subplot(131)
+            pl.imshow(dist_mat_output[j].argmax(dim=0))
+            ax = pl.subplot(132)
+            pl.imshow(data['dist_mat_target'][j])
+            if args.relative_3d:
+                ax = pl.subplot(133)
+                pl.imshow(data['dist_mat_input'][j])
+            pl.savefig(f'fig_dm/r3d-tid-pfam-{i}-{j}.pdf')
+            pl.close(fig)
 
 # loss = loss_dm(dist_mat_output[0:1], data["dist_mat_target"][0:1])
 
