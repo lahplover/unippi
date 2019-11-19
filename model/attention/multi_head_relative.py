@@ -27,7 +27,7 @@ class RelativeAttention(nn.Module):
 
         self.dropout = nn.Dropout(p=dropout)
 
-    def forward(self, query, key, value, relation_bias_matrix, mask=None):
+    def forward(self, query, key, value, relation_bias_matrix, mask=None, output=None):
         """
         forward function for RelativeAttention.
         :param query: [N, S, E]
@@ -76,6 +76,9 @@ class RelativeAttention(nn.Module):
 
         # 3) "Concat" using a view and apply a final linear.
         x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.num_heads * self.d_k)
+
+        if output is not None:
+            output['attention'].append(p_attn)
 
         return self.output_linear(x)
 

@@ -6,7 +6,7 @@ from data import DatasetSeqBlock
 from model import BlockLM
 from trainer import BlockTrainer
 import options
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torch import distributed
 from torch.utils.tensorboard import SummaryWriter
 
@@ -17,14 +17,14 @@ def load_dataset(args):
         print("Loading Train Dataset", train_data_path)
         train_dataset = DatasetSeqBlock(train_data_path, seq_len=args.seq_len,
                                         relative_3d=args.relative_3d,
-                                        relative_3d_size=10, relative_3d_step=2,
-                                        dmpeak_data_path=args.dmpeak_dataset)
+                                        relative_3d_size=10, relative_3d_step=2
+                                        )
 
         print("Loading Test Dataset", args.test_dataset)
         test_dataset = DatasetSeqBlock(args.test_dataset, seq_len=args.seq_len,
                                        relative_3d=args.relative_3d,
-                                       relative_3d_size=10, relative_3d_step=2,
-                                       dmpeak_data_path=args.dmpeak_dataset) \
+                                       relative_3d_size=10, relative_3d_step=2
+                                       ) \
             if args.test_dataset is not None else None
     elif args.task == 'interfam':
         train_data_path = args.train_dataset
@@ -93,8 +93,9 @@ def main():
         # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
         #                                num_workers=args.num_workers)
     else:
-        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                                       num_workers=args.num_workers)
+        datasampler = RandomSampler(train_dataset)
+        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                                       num_workers=args.num_workers, sampler=datasampler)
 
     test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
         if test_dataset is not None else None

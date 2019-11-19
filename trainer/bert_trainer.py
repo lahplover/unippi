@@ -149,12 +149,12 @@ class BERTTrainer:
 
             if train:
                 # print("write train loss")
-                self.writer.add_scalar('Loss/train', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Loss/train', loss.item(), epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy1/train', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy2/train', 100.0 * correct2 / batch_n_element2, epoch*len_data_loader + i)
 
             else:
-                self.writer.add_scalar('Loss/test', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Loss/test', loss.item(), epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy1/test', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy2/test', 100.0 * correct2 / batch_n_element2, epoch*len_data_loader + i)
 
@@ -227,10 +227,10 @@ class BERTTrainer:
 
             if train:
                 # print("write train loss")
-                self.writer.add_scalar('Loss/train', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Loss/train', loss.item(), epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
             else:
-                self.writer.add_scalar('Loss/test', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Loss/test', loss.item(), epoch*len_data_loader + i)
                 self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
             # print(i, loss)
             # self.writer.add_scalar('Loss', loss, epoch*len_data_loader + i)

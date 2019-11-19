@@ -120,10 +120,10 @@ class DMTrainer:
 
             if train:
                 # print("write train loss")
-                self.writer.add_scalar('Loss/train', loss, epoch * len_data_loader + i)
+                self.writer.add_scalar('Loss/train', loss.item(), epoch * len_data_loader + i)
                 self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
             else:
-                self.writer.add_scalar('Loss/test', loss, epoch * len_data_loader + i)
+                self.writer.add_scalar('Loss/test', loss.item(), epoch * len_data_loader + i)
                 self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
             # print(i, loss)
             # self.writer.add_scalar('Loss', loss, epoch*len_data_loader + i)

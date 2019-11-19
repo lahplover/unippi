@@ -6,7 +6,7 @@ from optim_schedule import ScheduledOptim
 from tqdm import tqdm
 
 
-class BlockTrainer:
+class FTProtEngTrainer:
     """
     """
 
@@ -16,7 +16,8 @@ class BlockTrainer:
                  warmup_steps=1000,
                  lr_scheduler='decay',
                  device='cpu',
-                 log_freq=10):
+                 log_freq=10,
+                 regression=True):
         """
         :param train_dataloader: train dataset data loader
         :param test_dataloader: test dataset data loader [can be None]
@@ -28,6 +29,7 @@ class BlockTrainer:
 
         self.model = model
         self.device = device
+        self.regression = regression
 
         # Setting the train and test data loader
         self.train_data = train_dataloader
@@ -44,9 +46,12 @@ class BlockTrainer:
         else:
             self.optim_schedule = ScheduledOptim(self.optim, n_warmup_steps=warmup_steps, init_lr=lr)
 
-        # Using Negative Log Likelihood Loss function
-        self.loss = nn.NLLLoss(ignore_index=0)
-        # self.loss_mse = nn.MSELoss()
+        if self.regression:
+            self.loss = nn.MSELoss()
+            # self.loss = nn.L1Loss()
+        else:
+            cls_weight = torch.tensor([10, 1], device=device, requires_grad=False, dtype=torch.float)
+            self.loss = nn.NLLLoss(weight=cls_weight)
 
         self.log_freq = log_freq
         self.writer = writer
@@ -58,7 +63,7 @@ class BlockTrainer:
 
     def test(self, epoch):
         # disable gradients to save memory
-        torch.set_grad_enabled(False)
+        # torch.set_grad_enabled(False)
         self.iteration_two(epoch, self.test_data, train=False)
 
     def iteration_two(self, epoch, data_loader, train=True):
@@ -75,19 +80,20 @@ class BlockTrainer:
         str_code = "train" if train else "test"
 
         avg_loss = 0.0
-        total_correct = 0
-        total_element = 0
         len_data_loader = len(data_loader)
+
+        if not self.regression:
+            total_correct = 0
+            total_element = 0
 
         for i, data in tqdm(enumerate(data_loader)):
             # 0. batch_data will be sent into the device(GPU or cpu)
             data = {key: value.to(self.device) for key, value in data.items()}
 
-            dist_mat_output = self.model(data["seq_input"], data["segment_label"],
-                                         distance_matrix=data["dist_mat_input"])
+            next_sent_output = self.model(data["seq_input"],
+                                          distance_matrix=data["dist_mat"])
 
-            # (N, S, E) --> (N, E, S)
-            loss = self.loss(dist_mat_output.transpose(1, 2), data["seq_target"])
+            loss = self.loss(next_sent_output, data["flux"])
 
             # 3. backward and optimization only in train
             if train:
@@ -101,31 +107,30 @@ class BlockTrainer:
                     loss.backward()
                     self.optim_schedule.step_and_update_lr()
 
-            # prediction accuracy
-            # idx = (data["dist_mat_target"] != self.no_msa_index)
-            idx = (data["seq_target"] > 0)
-            # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx])
-            # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx].eq(data["bert_label"][idx]))
-            correct = dist_mat_output.argmax(dim=-1).eq(data["seq_target"])[idx].sum().item()
-            batch_n_element = data["seq_target"][idx].nelement()
-            total_correct += correct
-            total_element += batch_n_element
-
             avg_loss += loss.item()
+
+            # prediction accuracy
+            if not self.regression:
+                correct = next_sent_output.argmax(dim=-1).eq(data["flux"]).sum().item()
+                batch_n_element = data["flux"].nelement()
+                total_correct += correct
+                total_element += batch_n_element
 
             if train:
                 # print("write train loss")
                 self.writer.add_scalar('Loss/train', loss.item(), epoch * len_data_loader + i)
-                self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
+                if not self.regression:
+                    self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element,
+                                           epoch * len_data_loader + i)
             else:
                 self.writer.add_scalar('Loss/test', loss.item(), epoch * len_data_loader + i)
-                self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
-            # print(i, loss)
-            # self.writer.add_scalar('Loss', loss, epoch*len_data_loader + i)
-            # self.writer.add_scalar('Accuracy', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
+                if not self.regression:
+                    self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element,
+                                           epoch * len_data_loader + i)
 
-        # print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader)
-        print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader, "total_acc=",
-              total_correct * 100.0 / total_element)
-
+        if self.regression:
+            print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader)
+        else:
+            print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader, "total_acc=",
+                  total_correct * 100.0 / total_element)
 

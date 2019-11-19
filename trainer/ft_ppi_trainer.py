@@ -56,7 +56,7 @@ class FTPPITrainer:
 
     def test(self, epoch):
         # disable gradients to save memory
-        torch.set_grad_enabled(False)
+        # torch.set_grad_enabled(False)
         self.iteration_two(epoch, self.test_data, train=False)
 
     def iteration_two(self, epoch, data_loader, train=True):
@@ -108,10 +108,10 @@ class FTPPITrainer:
 
             if train:
                 # print("write train loss")
-                self.writer.add_scalar('Loss/train', loss, epoch * len_data_loader + i)
+                self.writer.add_scalar('Loss/train', loss.item(), epoch * len_data_loader + i)
                 self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
             else:
-                self.writer.add_scalar('Loss/test', loss, epoch * len_data_loader + i)
+                self.writer.add_scalar('Loss/test', loss.item(), epoch * len_data_loader + i)
                 self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
             # print(i, loss)
             # self.writer.add_scalar('Loss', loss, epoch*len_data_loader + i)

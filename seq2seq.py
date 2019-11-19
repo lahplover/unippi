@@ -2,9 +2,9 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-from data import DatasetSeq, DatasetInterDomain, DatasetPDB
-from model import BERTLM
-from trainer import BERTTrainer
+from data import DatasetBlock, DatasetBlocksp
+from model import Transformer
+from trainer import Seq2SeqTrainer
 import options
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torch import distributed
@@ -12,44 +12,21 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 def load_dataset(args):
-    if args.task == 'pdb':
+    if args.task == 'block':
         train_data_path = args.train_dataset
         print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetPDB(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                   relative_3d=args.relative_3d,
-                                   relative_3d_size=10, relative_3d_step=2
-                                   )
+        train_dataset = DatasetBlock(train_data_path, seq_len=args.seq_len)
 
         print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetPDB(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                  relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d) \
+        test_dataset = DatasetBlock(args.test_dataset, seq_len=args.seq_len) \
             if args.test_dataset is not None else None
-    elif args.task == 'pfam':
+    elif args.task == 'blocksp':
         train_data_path = args.train_dataset
         print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetSeq(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                   relative_3d=args.relative_3d,
-                                   relative_3d_size=10, relative_3d_step=2
-                                   )
+        train_dataset = DatasetBlocksp(train_data_path, seq_len=args.seq_len)
 
         print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetSeq(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                  relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d) \
-            if args.test_dataset is not None else None
-    elif args.task == 'interfam':
-        train_data_path = args.train_dataset
-        print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetInterDomain(train_data_path, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                   relative_3d=args.relative_3d,
-                                   relative_3d_size=10, relative_3d_step=2,
-                                   corpus_lines=args.corpus_lines)
-
-        print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetInterDomain(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                  relative_3d_size=10, relative_3d_step=2,
-                                  relative_3d=args.relative_3d) \
+        test_dataset = DatasetBlocksp(args.test_dataset, seq_len=args.seq_len) \
             if args.test_dataset is not None else None
     else:
         raise ValueError('unknown task name')
@@ -108,6 +85,8 @@ def main():
         datasampler = RandomSampler(train_dataset)
         train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
                                        num_workers=args.num_workers, sampler=datasampler)
+        # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+        #                                num_workers=args.num_workers)
 
     test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
         if test_dataset is not None else None
@@ -115,15 +94,8 @@ def main():
     # build model
     print("Building BERT model")
     # Initialize the BERT Language Model, with BERT model
-    model = BERTLM(len(train_dataset.vocab),
-                   hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads,
-                   seq_mode=args.seq_mode,
-                   abs_position_embed=args.abs_position_embed,
-                   relative_attn=args.relative_attn,
-                   relative_1d=args.relative_1d,
-                   max_relative_1d_positions=10,
-                   relative_3d=args.relative_3d,
-                   relative_3d_vocab_size=len(train_dataset.vocab_3d))
+    model = Transformer(len(train_dataset.vocab),
+                        hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads)
 
     if args.restart:
         print("reload pretrained BERT model")
@@ -145,8 +117,7 @@ def main():
     # print(f'exp_{args.exp_i}, learning_rate: {args.lr}, weight_decay: {args.weight_decay}')
     writer = SummaryWriter(log_dir=args.log_dir + f'/exp{args.exp_i}')
 
-    trainer = BERTTrainer(writer, model,
-                          seq_mode=args.seq_mode,
+    trainer = Seq2SeqTrainer(writer, model,
                           train_dataloader=train_data_loader,
                           test_dataloader=test_data_loader,
                           lr=args.lr,
@@ -160,10 +131,11 @@ def main():
     if args.epochs > 0:
         print("Training Start")
         for epoch in range(args.epochs):
+            output_path = args.output_path + f"{args.save_prefix}_ep{epoch}"
+            # trainer.train(epoch, output_path=output_path)
             trainer.train(epoch)
             if epoch % args.save_freq == 0:
                 # Saving the current BERT model on file_path
-                output_path = args.output_path + f".{args.save_prefix}_ep{epoch}"
                 if gpu_mode == 0:
                     torch.save(model.state_dict(), output_path)
                 elif gpu_mode == 1:

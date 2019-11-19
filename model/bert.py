@@ -36,17 +36,20 @@ class TransformerEncoderLayer(nn.Module):
         # self.activation = F.gelu()
         self.activation = nn.ReLU()
 
-    def forward(self, x, mask=None, relation_bias_matrix=None):
+    def forward(self, x, mask=None, relation_bias_matrix=None, output=None):
         if self.relative_attention:
-            x_att = self.attention(x, x, x, relation_bias_matrix, mask)
+            x_att = self.attention(x, x, x, relation_bias_matrix, mask, output=output)
         else:
-            x_att = self.attention(x, x, x, mask)
+            x_att = self.attention(x, x, x, mask, output=output)
         # sublayer residue connection and the LayerNorm, follows the Pytorch transformer implementation
         x = self.norm1(x + self.dropout1(x_att))
 
         x_ff = self.linear2(self.dropout2(self.activation(self.linear1(x))))
 
         x = self.norm2(x + self.dropout3(x_ff))
+
+        if output is not None:
+            output['x_att'].append(x_att)
         return x
 
 
@@ -55,13 +58,14 @@ class BERT(nn.Module):
     BERT model : Bidirectional Encoder Representations from Transformers.
     """
 
-    def __init__(self, vocab_size, hidden=768, n_layers=12, attn_heads=12, dropout=0.1,
+    def __init__(self, vocab_size, hidden=768, n_layers=12, attn_heads=12, dropout=0.0,
                  seq_mode='one', abs_position_embed=True,
                  relative_attn=True,
                  relation_embed_size=16,
                  relative_1d=True, max_relative_1d_positions=10,
                  relative_3d=False, relative_3d_vocab_size=10,
-                 relative_attention_constrained=True):
+                 relative_attention_constrained=False,
+                 visual=False):
         """
         :param vocab_size: vocab_size of total words
         :param hidden: BERT model hidden size
@@ -71,6 +75,8 @@ class BERT(nn.Module):
         """
 
         super().__init__()
+        self.visual = visual
+
         self.hidden = hidden
         self.n_layers = n_layers
         self.attn_heads = attn_heads
@@ -149,8 +155,6 @@ class BERT(nn.Module):
             relation_bias_matrix = None
 
         # running over multiple transformer blocks
-        for transformer in self.transformer_blocks:
-            x = transformer.forward(x, mask, relation_bias_matrix)
 
         # i = 0
         # for transformer in self.transformer_blocks:
@@ -160,4 +164,14 @@ class BERT(nn.Module):
         #         x = transformer.forward(x, mask)
         #     i += 1
 
-        return x
+        if self.visual:
+            print('visualization')
+            output = {'attention': [], 'x_att': []}
+            for transformer in self.transformer_blocks:
+                x = transformer.forward(x, mask, relation_bias_matrix, output=output)
+            return x, output
+        else:
+            for transformer in self.transformer_blocks:
+                x = transformer.forward(x, mask, relation_bias_matrix)
+            return x
+

@@ -22,12 +22,17 @@ def get_training_parser():
     parser.add_argument("--task", type=str, default='pdb', help="task = pdb / pfam / interfam")
     parser.add_argument("--visual", action='store_true', default=False, help="visualization of the model")
     parser.add_argument("--seq_mode", type=str, default='one', help="seq mode = one / two / 2domain")
+    parser.add_argument("--ft_ppi_no_pretrain", action='store_true', default=False, help="do not use pretrained model")
+    parser.add_argument("--regression", action='store_true', default=False, help="regression or classification "
+                                                                                 "in protein engineering task")
 
     parser.add_argument("--abs_position_embed", action='store_true', default=False, help="absolute position embedding")
     parser.add_argument("--relative_attn", action='store_true', default=False, help="use relative attention")
     parser.add_argument("--relative_1d", action='store_true', default=False, help="relative 1d position")
     parser.add_argument("--relative_3d", action='store_true', default=False, help="relative 3d attention")
     parser.add_argument("--target_intra_dm", action='store_true', default=False, help="use intra_dm as training target")
+    parser.add_argument("--relative_attention_constrained", action='store_true',
+                        default=False, help="constrain the relative attention to the lower two layers")
 
     parser.add_argument("-hs", "--hidden", type=int, default=256, help="hidden size of transformer model")
     parser.add_argument("-l", "--layers", type=int, default=1, help="number of layers")

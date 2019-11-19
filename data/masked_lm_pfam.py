@@ -99,7 +99,7 @@ class DatasetSeq(Dataset):
         else:
             raise ValueError('seq_mode should be one/two.')
         for key, value in output.items():
-            output[key] = torch.tensor(value)
+            output[key] = torch.tensor(value, requires_grad=False)
         return output
 
     def _get_item_one(self, item):

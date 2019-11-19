@@ -1,4 +1,5 @@
 import torch.nn as nn
+import torch
 from .bert import BERT
 
 
@@ -35,8 +36,10 @@ class FTPPI(nn.Module):
         self.next_sentence = NextSentencePrediction(hidden)
 
     def forward(self, x, segment_label=None, distance_matrix=None):
+        # x (N, S)
+        mask_pad = (x > 0).unsqueeze(-1)
         x = self.bert(x, segment_label, distance_matrix)
-        return self.next_sentence(x)
+        return self.next_sentence(x, mask_pad)
 
 
 class NextSentencePrediction(nn.Module):
@@ -50,11 +53,49 @@ class NextSentencePrediction(nn.Module):
         :param hidden: BERT model output size
         """
         super().__init__()
-        self.linear = nn.Linear(hidden, 2)
+        self.compute_weight = nn.Linear(hidden, 1)
+        self.linear1 = nn.Linear(hidden, hidden)
+        self.linear2 = nn.Linear(hidden, 2)
+        self.activation = nn.ReLU()
         self.softmax = nn.LogSoftmax(dim=-1)
 
-    def forward(self, x):
-        x = x[:, 0]
-        return self.softmax(self.linear(x))
+    def forward(self, x, mask_pad):
+        attention_weight = self.compute_weight(x)  # (N, S, E) -> (N, S, 1)
+        attention_weight = attention_weight.masked_fill(mask_pad == 0, -1e9)
+        attention = nn.functional.softmax(attention_weight, dim=1)
+        # print(x.size(), attention.size())
+        x = torch.matmul(attention.transpose(1, 2), x).squeeze()  # (N, 1, S) * (N, S, E)
+        # print(x.size())
+        x = self.activation(self.linear1(x))  # (N, E)
+        return self.softmax(self.linear2(x))  # (N, 2)
 
 
+class FTPPIOneHot(nn.Module):
+    """
+    finetune the Next Sentence Prediction Model
+    """
+
+    def __init__(self, vocab_size, hidden):
+        """
+        """
+        super().__init__()
+        self.vocab_size = vocab_size
+        self.compute_weight = nn.Linear(vocab_size, 1)
+        self.linear1 = nn.Linear(vocab_size, hidden)
+        self.linear2 = nn.Linear(hidden, 2)
+        self.activation = nn.ReLU()
+        self.softmax = nn.LogSoftmax(dim=-1)
+
+    def forward(self, x, segment_label=None, distance_matrix=None):
+        # x (N, S)
+        mask_pad = (x > 0).unsqueeze(-1)
+        x = nn.functional.one_hot(x, num_classes=self.vocab_size)
+        x = torch.tensor(x, dtype=torch.float, device=x.device)
+        attention_weight = self.compute_weight(x)  # (N, S, E) -> (N, S, 1)
+        attention_weight = attention_weight.masked_fill(mask_pad == 0, -1e9)
+        attention = nn.functional.softmax(attention_weight, dim=1)
+        # print(x.size(), attention.size())
+        x = torch.matmul(attention.transpose(1, 2), x).squeeze()  # (N, 1, S) * (N, S, E)
+        # print(x.size())
+        x = self.activation(self.linear1(x))  # (N, E)
+        return self.softmax(self.linear2(x))  # (N, 2)

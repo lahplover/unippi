@@ -95,10 +95,12 @@ if not args.visual:
 else:
     # visualization
     import matplotlib.pyplot as pl
-    no_msa_index = test_dataset.vocab_3d['no_msa']
-    dm_weight = (no_msa_index - torch.arange(no_msa_index + 1, device=device,
-                                             requires_grad=False, dtype=torch.float)) ** 2
-    loss_dm = nn.NLLLoss(weight=dm_weight, ignore_index=no_msa_index)
+    # no_msa_index = test_dataset.vocab_3d['no_msa']
+    # dm_weight = (no_msa_index - torch.arange(no_msa_index + 1, device=device,
+    #                                          requires_grad=False, dtype=torch.float)) ** 2
+    dm_weight = torch.tensor([100] * 5 + [50] * 5 + [1, 0],
+                             device=device, requires_grad=False, dtype=torch.float)
+    loss_dm = nn.NLLLoss(weight=dm_weight)
 
     for i, data in tqdm(enumerate(test_data_loader)):
         data = {key: value.to(device) for key, value in data.items()}
@@ -116,7 +118,7 @@ else:
             if args.relative_3d:
                 ax = pl.subplot(133)
                 pl.imshow(data['dist_mat_input'][j])
-            pl.savefig(f'fig_dm/r3d-tid-pfam-{i}-{j}.pdf')
+            pl.savefig(f'fig_dm/r3d-interpfam-{i}-{j}.pdf')
             pl.close(fig)
 
 # loss = loss_dm(dist_mat_output[0:1], data["dist_mat_target"][0:1])

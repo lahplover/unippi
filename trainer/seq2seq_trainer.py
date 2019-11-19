@@ -6,10 +6,7 @@ from optim_schedule import ScheduledOptim
 from tqdm import tqdm
 
 
-class BlockTrainer:
-    """
-    """
-
+class Seq2SeqTrainer:
     def __init__(self, writer, model,
                  train_dataloader, test_dataloader=None,
                  lr=1e-4, betas=(0.9, 0.999), weight_decay=0.01,
@@ -44,28 +41,25 @@ class BlockTrainer:
         else:
             self.optim_schedule = ScheduledOptim(self.optim, n_warmup_steps=warmup_steps, init_lr=lr)
 
-        # Using Negative Log Likelihood Loss function
-        self.loss = nn.NLLLoss(ignore_index=0)
-        # self.loss_mse = nn.MSELoss()
+        # Using Negative Log Likelihood Loss function for predicting the masked_token
+        self.criterion = nn.NLLLoss(ignore_index=0)
 
         self.log_freq = log_freq
         self.writer = writer
 
         print("Total Parameters:", sum([p.nelement() for p in self.model.parameters()]))
 
-    def train(self, epoch):
-        self.iteration_two(epoch, self.train_data)
+    def train(self, epoch, output_path=None):
+        self.iteration(epoch, self.train_data, train=True, output_path=output_path)
 
     def test(self, epoch):
-        # disable gradients to save memory
-        torch.set_grad_enabled(False)
-        self.iteration_two(epoch, self.test_data, train=False)
+        self.iteration(epoch, self.test_data, train=False)
 
-    def iteration_two(self, epoch, data_loader, train=True):
+    def iteration(self, epoch, data_loader, train=True, output_path=None):
         """
         loop over the data_loader for training or testing
         if on train status, backward operation is activated
-        and also auto save the model every epoch
+        and also auto save the model every peoch
 
         :param epoch: current epoch index
         :param data_loader: torch.utils.data.DataLoader for iteration
@@ -80,14 +74,14 @@ class BlockTrainer:
         len_data_loader = len(data_loader)
 
         for i, data in tqdm(enumerate(data_loader)):
-            # 0. batch_data will be sent into the device(GPU or cpu)
             data = {key: value.to(self.device) for key, value in data.items()}
 
-            dist_mat_output = self.model(data["seq_input"], data["segment_label"],
-                                         distance_matrix=data["dist_mat_input"])
+            seq_output = self.model.forward(data["src"], data["tgt_x"])
 
-            # (N, S, E) --> (N, E, S)
-            loss = self.loss(dist_mat_output.transpose(1, 2), data["seq_target"])
+            # NLLLoss of predicting masked token word
+            # (N, T, E) --> (N, E, T)
+            # print(seq_output.transpose(1, 2))
+            loss = self.criterion(seq_output.transpose(1, 2), data["tgt_y"])
 
             # 3. backward and optimization only in train
             if train:
@@ -101,13 +95,12 @@ class BlockTrainer:
                     loss.backward()
                     self.optim_schedule.step_and_update_lr()
 
-            # prediction accuracy
-            # idx = (data["dist_mat_target"] != self.no_msa_index)
-            idx = (data["seq_target"] > 0)
+            # masked token prediction accuracy
+            idx = (data["tgt_y"] > 0)
             # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx])
             # print(mask_lm_output.transpose(1, 2).argmax(dim=1)[idx].eq(data["bert_label"][idx]))
-            correct = dist_mat_output.argmax(dim=-1).eq(data["seq_target"])[idx].sum().item()
-            batch_n_element = data["seq_target"][idx].nelement()
+            correct = seq_output.transpose(1, 2).argmax(dim=1)[idx].eq(data["tgt_y"][idx]).sum().item()
+            batch_n_element = data["tgt_y"][idx].nelement()
             total_correct += correct
             total_element += batch_n_element
 
@@ -115,17 +108,20 @@ class BlockTrainer:
 
             if train:
                 # print("write train loss")
-                self.writer.add_scalar('Loss/train', loss.item(), epoch * len_data_loader + i)
-                self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
+                self.writer.add_scalar('Loss/train', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Accuracy/train', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
             else:
-                self.writer.add_scalar('Loss/test', loss.item(), epoch * len_data_loader + i)
-                self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch * len_data_loader + i)
-            # print(i, loss)
-            # self.writer.add_scalar('Loss', loss, epoch*len_data_loader + i)
-            # self.writer.add_scalar('Accuracy', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
+                self.writer.add_scalar('Loss/test', loss, epoch*len_data_loader + i)
+                self.writer.add_scalar('Accuracy/test', 100.0 * correct / batch_n_element, epoch*len_data_loader + i)
+
+            save_step = 10000
+            if output_path is not None:
+                if i % save_step == 0:
+                    output_path_step = output_path + f'_st{i // save_step}'
+                    torch.save(self.model.module.state_dict(), output_path_step)
+                    print(f"EP:{epoch} Step{i // save_step} Model Saved on {output_path_step}")
 
         # print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader)
         print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader, "total_acc=",
               total_correct * 100.0 / total_element)
-
 

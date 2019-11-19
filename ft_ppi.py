@@ -2,11 +2,11 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-from model import FTPPI
+from model import FTPPI, FTPPIOneHot
 from trainer import FTPPITrainer
 from data import DatasetFTInterFam
 import options
-from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torch import distributed
 from torch.utils.tensorboard import SummaryWriter
 
@@ -76,26 +76,34 @@ def main():
         # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
         #                                num_workers=args.num_workers)
     else:
-        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                                       num_workers=args.num_workers)
+        datasampler = RandomSampler(train_dataset)
+        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                                       num_workers=args.num_workers, sampler=datasampler)
 
     test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
         if test_dataset is not None else None
 
     # build model
     print("Building model")
-    model = FTPPI(len(train_dataset.vocab),
-                    hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads,
-                    abs_position_embed=args.abs_position_embed,
-                    relative_attn=args.relative_attn,
-                    relative_1d=args.relative_1d,
-                    max_relative_1d_positions=10,
-                    relative_3d=args.relative_3d,
-                    relative_3d_vocab_size=len(train_dataset.vocab_3d))
+    if not args.ft_ppi_no_pretrain:
+        model = FTPPI(len(train_dataset.vocab),
+                        hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads,
+                        abs_position_embed=args.abs_position_embed,
+                        relative_attn=args.relative_attn,
+                        relative_1d=args.relative_1d,
+                        max_relative_1d_positions=10,
+                        relative_3d=args.relative_3d,
+                        relative_3d_vocab_size=len(train_dataset.vocab_3d))
 
-    if args.restart:
-        print("reload pretrained model")
-        model.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')))
+        if args.restart:
+            print("reload pretrained model")
+            # model.bert.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')),
+            #                            strict=False)
+            model.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')))
+            for param in model.bert.parameters():
+                param.requires_grad = False
+    else:
+        model = FTPPIOneHot(len(train_dataset.vocab), args.hidden)
 
     model.to(device)
 

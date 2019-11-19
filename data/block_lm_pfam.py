@@ -38,10 +38,20 @@ def _get_dist_mat_inner_loop(sindel, h, dist_mat, dist_mat_hmm):
     return dist_mat
 
 
+@jit(nopython=True)
+def _dm_peak_one(contact_mat):
+    n = contact_mat.shape[0]
+    ij_list = []
+    for i in range(-16, n-48, 16):
+        for j in range(i+32, n-16, 16):
+            if np.sum(contact_mat[i:i+32, j:j+32]) >= 10:
+                ij_list.append((i, j))
+    return ij_list
+
+
 class DatasetSeqBlock(Dataset):
     def __init__(self, corpus_path, seq_len,
-                 relative_3d=False, relative_3d_size=10, relative_3d_step=2,
-                 dmpeak_data_path='data/seq_unalign_indel_all_dmpeak_only_sample.pkl',
+                 relative_3d=False, relative_3d_size=10, relative_3d_step=2
                  ):
         # self.vocab = vocab
         amino_acids = pd.read_csv('data/amino_acids.csv')
@@ -70,15 +80,14 @@ class DatasetSeqBlock(Dataset):
         self.seq = df['seq_unalign'].values
         self.fam = df['pfam_acc'].values
         self.num_seq = len(self.fam)
+        # self.dmpeak = df['dmpeak'].values
+        # df_dmpeak = pd.read_pickle(dmpeak_data_path)
+        # self.dmpeak = df_dmpeak['dmpeak'].values
 
-        df_dmpeak = pd.read_pickle(dmpeak_data_path)
-        self.dmpeak = df_dmpeak['dmpeak'].values
-
-        if self.relative_3d:
-            self.seq_indel = df['seq_indel'].values
-            df_dm_hmm = pd.read_pickle('data/distmat_hmm_pfam_all.pkl')
-            # all pfam_acc in self.fam have one item in distmat_hmm_pfam_all.pkl
-            self.dist_mat_dict = {x: y for x, y in zip(df_dm_hmm['fam'], df_dm_hmm['distmat'])}
+        self.seq_indel = df['seq_indel'].values
+        df_dm_hmm = pd.read_pickle('data/distmat_hmm_pfam_all.pkl')
+        # all pfam_acc in self.fam have one item in distmat_hmm_pfam_all.pkl
+        self.dist_mat_dict = {x: y for x, y in zip(df_dm_hmm['fam'], df_dm_hmm['distmat'])}
 
     def __len__(self):
         return self.num_seq
@@ -90,9 +99,21 @@ class DatasetSeqBlock(Dataset):
         return output
 
     def _get_item_two(self, item):
-        dmpeak_list = self.dmpeak[item]
-        i, j = dmpeak_list[np.random.randint(0, len(dmpeak_list))]
+        t12_fam = self.fam[item]
         t12 = self.seq[item]
+        t12_indel = self.seq_indel[item]
+        dist_mat = self._get_clipped_dist_mat(t12_fam, t12, t12_indel)
+
+        n = dist_mat.shape[0]
+        contact_mat = np.zeros((n, n), dtype=np.int8)
+        contact_mat[(dist_mat > 0) & (dist_mat < 8 // self.relative_3d_step)] = 1
+        dmpeak = _dm_peak_one(contact_mat)
+
+        if len(dmpeak) > 0:
+            i, j = dmpeak[np.random.randint(0, len(dmpeak))]
+        else:
+            i, j = (0, 32)
+
         t1, t2 = t12[i:i+32], t12[j:j+32]
 
         t1 = self.tokenizer(t1)
@@ -108,11 +129,6 @@ class DatasetSeqBlock(Dataset):
         t12_len = len(seq_input)
 
         if self.relative_3d:
-            t12_fam = self.fam[item]
-            # print(t12_fam)
-            t12_indel = self.seq_indel[item]
-            dist_mat = self._get_clipped_dist_mat(t12_fam, t12, t12_indel)
-
             t1_dist_mat = dist_mat[i:i+32, i:i+32]
             t2_dist_mat = dist_mat[j:j+32, j:j+32]
             dist_mat_inter = dist_mat[i:i+32, j:j+32]

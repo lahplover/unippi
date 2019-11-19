@@ -6,8 +6,24 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from model import BERTLM
 from trainer import BERTTrainer
-from data import DatasetInterDomain
+from data import DatasetSeq, DatasetInterDomain, DatasetPDB
 import options
+
+
+
+def load_dataset(args):
+    if args.task == 'pfam':
+        test_dataset = DatasetSeq(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
+                                  relative_3d_size=10, relative_3d_step=2,
+                                  relative_3d=args.relative_3d)
+    elif args.task == 'interfam':
+        test_dataset = DatasetInterDomain(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
+                                  relative_3d_size=10, relative_3d_step=2,
+                                  relative_3d=args.relative_3d)
+    else:
+        raise ValueError('unknown task name')
+
+    return test_dataset
 
 
 parser = options.get_training_parser()
@@ -23,12 +39,17 @@ if (gpu_mode == 1) & torch.cuda.is_available():
 else:
     device = torch.device("cpu")
 
-
-final_test_dataset = DatasetInterDomain(args.test_dataset, seq_len=args.seq_len, seq_mode=args.seq_mode,
-                                        relative_3d_size=10, relative_3d_step=2,
-                                        relative_3d=args.relative_3d, on_memory=args.on_memory)
+final_test_dataset = load_dataset(args)
 
 final_test_data_loader = DataLoader(final_test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+
+
+# final_test_dataset = DatasetInterDomain(args.test_dataset,
+#                                         seq_len=args.seq_len, seq_mode=args.seq_mode,
+#                                         relative_3d_size=10, relative_3d_step=2,
+#                                         relative_3d=args.relative_3d)
+#
+# final_test_data_loader = DataLoader(final_test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
 print("Building BERT model")
 # Initialize the BERT Language Model, with BERT model

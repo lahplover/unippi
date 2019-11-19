@@ -2,9 +2,9 @@ import os
 import numpy as np
 import torch
 import torch.nn as nn
-from data import DatasetPDBInter, DatasetSeqInter, DatasetPDBInterDomain
-from model import InterDM
-from trainer import DMTrainer
+from model import FTProtEng
+from trainer import FTProtEngTrainer
+from data import DatasetProtEng
 import options
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torch import distributed
@@ -12,49 +12,20 @@ from torch.utils.tensorboard import SummaryWriter
 
 
 def load_dataset(args):
-    if args.task == 'pdb':
-        train_data_path = args.train_dataset
-        print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetPDBInter(train_data_path, seq_len=args.seq_len,
-                                        relative_3d=args.relative_3d,
-                                        relative_3d_size=10, relative_3d_step=2,
-                                        target_intra_dm=args.target_intra_dm)
-
-        print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetPDBInter(args.test_dataset, seq_len=args.seq_len,
-                                       relative_3d=args.relative_3d,
-                                       relative_3d_size=10, relative_3d_step=2,
-                                       target_intra_dm=args.target_intra_dm) \
-            if args.test_dataset is not None else None
-    elif args.task == 'pfam':
-        train_data_path = args.train_dataset
-        print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetSeqInter(train_data_path, seq_len=args.seq_len,
-                                        relative_3d=args.relative_3d,
-                                        relative_3d_size=10, relative_3d_step=2,
-                                        target_intra_dm=args.target_intra_dm)
-
-        print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetSeqInter(args.test_dataset, seq_len=args.seq_len,
-                                       relative_3d=args.relative_3d,
-                                       relative_3d_size=10, relative_3d_step=2,
-                                       target_intra_dm=args.target_intra_dm) \
-            if args.test_dataset is not None else None
-    elif args.task == 'interfam':
-        train_data_path = args.train_dataset
-        print("Loading Train Dataset", train_data_path)
-        train_dataset = DatasetPDBInterDomain(train_data_path, seq_len=args.seq_len,
-                                              relative_3d=args.relative_3d,
-                                              relative_3d_size=10, relative_3d_step=2,
-                                              target_intra_dm=args.target_intra_dm)
-        print("Loading Test Dataset", args.test_dataset)
-        test_dataset = DatasetPDBInterDomain(args.test_dataset, seq_len=args.seq_len,
-                                             relative_3d=args.relative_3d,
-                                             relative_3d_size=10, relative_3d_step=2,
-                                             target_intra_dm=args.target_intra_dm) \
-            if args.test_dataset is not None else None
-    else:
-        raise ValueError('unknown task name')
+    train_data_path = args.train_dataset
+    print("Loading Train Dataset", train_data_path)
+    train_dataset = DatasetProtEng(train_data_path, seq_len=args.seq_len,
+                                   relative_3d=args.relative_3d,
+                                   relative_3d_size=10, relative_3d_step=2,
+                                   regression=args.regression
+                                   )
+    print("Loading Test Dataset", args.test_dataset)
+    test_dataset = DatasetProtEng(args.test_dataset, seq_len=args.seq_len,
+                                  relative_3d=args.relative_3d,
+                                  relative_3d_size=10, relative_3d_step=2,
+                                  regression=args.regression
+                                  ) \
+        if args.test_dataset is not None else None
 
     return train_dataset, test_dataset
 
@@ -116,18 +87,23 @@ def main():
 
     # build model
     print("Building model")
-    model = InterDM(len(train_dataset.vocab),
+    model = FTProtEng(len(train_dataset.vocab),
                     hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads,
                     abs_position_embed=args.abs_position_embed,
                     relative_attn=args.relative_attn,
                     relative_1d=args.relative_1d,
                     max_relative_1d_positions=10,
                     relative_3d=args.relative_3d,
-                    relative_3d_vocab_size=len(train_dataset.vocab_3d))
+                    relative_3d_vocab_size=len(train_dataset.vocab_3d),
+                    regression=args.regression)
 
     if args.restart:
         print("reload pretrained model")
-        model.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')))
+        model.bert.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')),
+                                   strict=False)
+        # model.load_state_dict(torch.load(args.restart_file, map_location=torch.device('cpu')))
+        for param in model.bert.parameters():
+            param.requires_grad = False
 
     model.to(device)
 
@@ -145,8 +121,7 @@ def main():
     # print(f'exp_{args.exp_i}, learning_rate: {args.lr}, weight_decay: {args.weight_decay}')
     writer = SummaryWriter(log_dir=args.log_dir + f'/exp{args.exp_i}')
 
-    trainer = DMTrainer(writer, model,
-                        no_msa_index=train_dataset.vocab_3d['no_msa'],
+    trainer = FTProtEngTrainer(writer, model,
                         train_dataloader=train_data_loader,
                         test_dataloader=test_data_loader,
                         lr=args.lr,
@@ -155,7 +130,8 @@ def main():
                         warmup_steps=args.warmup_steps,
                         lr_scheduler=args.lr_scheduler,
                         device=device,
-                        log_freq=args.log_freq)
+                        log_freq=args.log_freq,
+                        regression=args.regression)
 
     print("Training Start")
     for epoch in range(args.epochs):
@@ -179,3 +155,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
