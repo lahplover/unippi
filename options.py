@@ -44,6 +44,7 @@ def get_training_parser():
     parser.add_argument("-e", "--epochs", type=int, default=10, help="number of epochs")
     parser.add_argument("-w", "--num_workers", type=int, default=0, help="dataloader worker size")
     # parser.add_argument("--on_memory", action='store_true', default=False, help="Loading on memory: true or false")
+    parser.add_argument("--label_smoothing", action='store_true', default=False, help="label smoothing")
 
     parser.add_argument("--log_freq", type=int, default=10, help="printing loss every n iter: setting n")
     parser.add_argument("--log_dir", type=str, default='./runs', help="directory for tensorboard log")
@@ -57,7 +58,7 @@ def get_training_parser():
     parser.add_argument("--warmup_steps", type=int, default=300, help="warm up steps")
     parser.add_argument("--adam_weight_decay", type=float, default=1e-2, help="weight_decay of adam")
     parser.add_argument("--adam_beta1", type=float, default=0.9, help="adam first beta value")
-    parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam first beta value")
+    parser.add_argument("--adam_beta2", type=float, default=0.999, help="adam second beta value")
 
     return parser
 

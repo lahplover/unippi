@@ -4,14 +4,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from data import DatasetSeqLM
-from model import SeqLM
+from model import SeqLM, ProLM
 from trainer import SeqLMTrainer
 import options
 from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
 from torch import distributed
 from torch.utils.tensorboard import SummaryWriter
-import matplotlib.pyplot as pl
+# import matplotlib.pyplot as pl
 from tqdm import tqdm
+import pandas as pd
 
 
 def load_dataset(args):
@@ -72,13 +73,19 @@ test_dataset = load_dataset(args)
 #                                    num_workers=args.num_workers, sampler=datasampler)
 #     # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
 #     #                                num_workers=args.num_workers)
-#
+
+# datasampler = RandomSampler(test_dataset)
+# test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers,
+#                               sampler=datasampler)
+
 test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
 # build model
 print("Building BERT model")
 # Initialize the BERT Language Model, with BERT model
-model = SeqLM(len(test_dataset.vocab),
+# model = SeqLM(len(test_dataset.vocab),
+#               hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads)
+model = ProLM(len(test_dataset.vocab),
               hidden=args.hidden, n_layers=args.layers, attn_heads=args.attn_heads)
 
 if args.restart:
@@ -99,6 +106,7 @@ elif (gpu_mode == 1) and (torch.cuda.device_count() > 1):
     model = nn.DataParallel(model)
 
 model.eval()
+torch.set_grad_enabled(False)
 
 writer = SummaryWriter(log_dir=args.log_dir + f'/exp{args.exp_i}')
 
@@ -115,15 +123,22 @@ trainer = SeqLMTrainer(writer, model,
 
 # print('Testing')
 # trainer.test(1)
+#
+amino_acids = pd.read_csv('data/amino_acids.csv')
+vocab = {x: y for x, y in zip(amino_acids.AA, amino_acids.idx)}
+vocab['pad_index'] = 0
+vocab['start_index'] = 21
+vocab['unk_index'] = 22
 
+idx2vocab = {y: x for x, y in vocab.items()}
 
 avg_loss = 0.0
 total_correct = 0
 total_element = 0
 len_data_loader = len(test_data_loader)
 
-loss_fn = nn.NLLLoss(ignore_index=0
-                  )
+loss_fn = nn.NLLLoss(ignore_index=0)
+
 for i, data in tqdm(enumerate(test_data_loader)):
     data = {key: value.to(device) for key, value in data.items()}
 
@@ -131,7 +146,7 @@ for i, data in tqdm(enumerate(test_data_loader)):
 
     # NLLLoss of predicting masked token word
     # (N, T, E) --> (N, E, T)
-    print(seq_output.transpose(1, 2).argmax(dim=1))
+    # print(seq_output.transpose(1, 2).argmax(dim=1))
     loss = loss_fn(seq_output.transpose(1, 2), data["seq"])
 
     # masked token prediction accuracy
@@ -147,6 +162,20 @@ for i, data in tqdm(enumerate(test_data_loader)):
 
     total_correct += correct
     total_element += batch_n_element
+
+    with open('data/seq_lm_prediction.txt', 'at') as sf:
+        seq_output = seq_output.detach().cpu().transpose(1, 2).argmax(dim=1).numpy()  # (N, T)
+        seq_target = data['seq'].cpu().numpy()
+        for j in range(seq_output.shape[0]):
+            ind = (seq_target[j] > 0)
+            s_pred = ''.join([idx2vocab[x] for x in seq_output[j][ind]])
+            s_target = ''.join([idx2vocab[x] for x in seq_target[j][ind]])
+            print(s_pred, s_target)
+
+            sf.write(s_target + ',' + s_pred + '\n')
+
+    # if i >= 1:
+    #     break
 
 print(f"avg_loss= {avg_loss / len_data_loader}, total_acc= {total_correct * 100.0 / total_element}")
 

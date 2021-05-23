@@ -46,7 +46,9 @@ class RelativeAttention(nn.Module):
 
         # 2) Apply attention on all the projected vectors in batch.
         # first attention term, [N, num_heads, S, dk] * [N, num_heads, dk, S] -> [N, num_heads, S, S]
-        score1 = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+        # TODO: caught an error on 2019-Dec-11, score1 should not divide sqrt(d_k) here. removed it.
+        # score1 = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(self.d_k)
+        score1 = torch.matmul(query, key.transpose(-2, -1))
 
         # second attention term (relative attention)
         if self.d_relation is None:

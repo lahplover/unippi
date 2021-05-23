@@ -9,6 +9,7 @@ from .ft_ppi_interfam import DatasetFTInterFam
 from .block_seq2seq import DatasetBlock
 from .prot_eng_data import DatasetProtEng
 from .seq_lm_dataset import DatasetSeqLM
+from .seq_lm_iter import DatasetSeqLMIter
 from .blocksp_seq2seq import DatasetBlocksp
 
 

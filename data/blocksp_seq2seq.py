@@ -21,15 +21,38 @@ class DatasetBlocksp(Dataset):
         self.seq_len = seq_len
         self.corpus_path = corpus_path
 
-        df = pd.read_csv(corpus_path)
+        # self.chunksize = 10**4
+        # self.df = pd.read_csv(corpus_path, sep=',', chunksize=self.chunksize, engine='python')
+        #                       # dtype={'seq_num': np.int32, 'block_a': str, 'block_b': str, 'fam': str})
+        # self.buffer = self.df.__next__()
+        # self.count = 0
+        # self.seq_a, self.seq_b = self.buffer['block_a'].values, self.buffer['block_b'].values
+        #
+        # seq_num = pd.read_csv(corpus_path, usecols=['seq_num'])
+        # self.num_seq = seq_num.shape[0]
+
+        df = pd.read_csv(corpus_path, usecols=['block_a', 'block_b'])
+        self.num_seq = df.shape[0]
         self.seq_a, self.seq_b = df['block_a'].values, df['block_b'].values
-        self.num_seq = len(self.seq_a)
 
     def __len__(self):
         return self.num_seq
 
     def __getitem__(self, item):
+        # print(item)
+        # item = item - self.count * self.chunksize
+        # if item >= self.chunksize:
+        #     self.buffer = self.df.__next__()
+        #     self.seq_a, self.seq_b = self.buffer['block_a'].values, self.buffer['block_b'].values
+        #     self.count += 1
+        #     item -= self.chunksize
+        # if item >= self.chunksize:
+        #     raise ValueError('item is outside the next chunk')
+
         t1, t2 = self.seq_a[item], self.seq_b[item]
+
+        t1 = t1.upper()
+        t2 = t2.upper()
 
         src = self.tokenizer(t1)
         tgt = self.tokenizer(t2)

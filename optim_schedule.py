@@ -27,9 +27,10 @@ class ScheduledOptim():
         # return np.min([
         #     np.power(self.n_current_steps, -0.5),
         #     np.power(self.n_warmup_steps, -1.5) * self.n_current_steps])
-        # return 0.95**(self.n_current_steps/100000)
+
+        # return 0.9**(self.n_current_steps/self.steps_decay_scale)
         warmup_factor = np.min([1, self.n_current_steps / self.n_warmup_steps])
-        return 0.95**(self.n_current_steps/self.steps_decay_scale) * warmup_factor
+        return 0.95**(self.n_current_steps/self.steps_decay_scale) * warmup_factor**0.5
         # return 1.05**(self.n_current_steps/500)
 
         # return 1.0

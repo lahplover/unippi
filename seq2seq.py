@@ -6,7 +6,7 @@ from data import DatasetBlock, DatasetBlocksp
 from model import Transformer
 from trainer import Seq2SeqTrainer
 import options
-from torch.utils.data import DataLoader, DistributedSampler, RandomSampler
+from torch.utils.data import DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 from torch import distributed
 from torch.utils.tensorboard import SummaryWriter
 
@@ -71,25 +71,42 @@ def main():
     # print("Loading Train Dataset", args.train_dataset)
     # train_data_path = args.train_dataset
 
-    train_dataset, test_dataset = load_dataset(args)
+    # train_dataset, test_dataset = load_dataset(args)
 
-    print("Creating Dataloader")
+    # print("Creating Dataloader")
+    # if gpu_mode == 2:
+    #     datasampler = DistributedSampler(train_dataset, shuffle=False)
+    #     # datasampler = DistributedSampler(train_dataset, shuffle=True)
+    #     # datasampler = DistributedSampler(train_dataset, num_replicas=args.world_size, rank=args.rank)
+    #     train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+    #                                    num_workers=args.num_workers, sampler=datasampler)
+    #     # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+    #     #                                num_workers=args.num_workers)
+    # else:
+    #     # datasampler = RandomSampler(train_dataset)
+    #     datasampler = SequentialSampler(train_dataset)
+    #     train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+    #                                    num_workers=args.num_workers, sampler=datasampler)
+    #     # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+    #     #                                num_workers=args.num_workers)
+    #
+    # test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
+    #     if test_dataset is not None else None
+
     if gpu_mode == 2:
-        datasampler = DistributedSampler(train_dataset, shuffle=True)
-        # datasampler = DistributedSampler(train_dataset, num_replicas=args.world_size, rank=args.rank)
-        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                                       num_workers=args.num_workers, sampler=datasampler)
-        # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-        #                                num_workers=args.num_workers)
+        global_rank = distributed.get_rank()
+        print(f"Loading Train Dataset: {global_rank}")
+        # train_data_path = './data/multinode/seq_split_train_shuffle_' + str(global_rank) + '.csv'
+        train_data_path = './data/multinode/seq_split_nr90_train_' + str(global_rank) + '.csv'
     else:
-        datasampler = RandomSampler(train_dataset)
-        train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-                                       num_workers=args.num_workers, sampler=datasampler)
-        # train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
-        #                                num_workers=args.num_workers)
+        train_data_path = args.train_dataset
+    print(train_data_path)
 
-    test_data_loader = DataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers) \
-        if test_dataset is not None else None
+    train_dataset = DatasetBlocksp(train_data_path, seq_len=args.seq_len)
+
+    datasampler = RandomSampler(train_dataset)
+    train_data_loader = DataLoader(train_dataset, batch_size=args.batch_size,
+                                   num_workers=args.num_workers, sampler=datasampler)
 
     # build model
     print("Building BERT model")
@@ -119,38 +136,32 @@ def main():
 
     trainer = Seq2SeqTrainer(writer, model,
                           train_dataloader=train_data_loader,
-                          test_dataloader=test_data_loader,
+                          test_dataloader=None,
                           lr=args.lr,
                           betas=(args.adam_beta1, args.adam_beta2),
                           weight_decay=args.adam_weight_decay,
                           warmup_steps=args.warmup_steps,
                           lr_scheduler=args.lr_scheduler,
                           device=device,
-                          log_freq=args.log_freq)
+                          log_freq=args.log_freq,
+                          label_smoothing=args.label_smoothing)
 
-    if args.epochs > 0:
-        print("Training Start")
-        for epoch in range(args.epochs):
-            output_path = args.output_path + f"{args.save_prefix}_ep{epoch}"
-            # trainer.train(epoch, output_path=output_path)
-            trainer.train(epoch)
-            if epoch % args.save_freq == 0:
-                # Saving the current BERT model on file_path
-                if gpu_mode == 0:
-                    torch.save(model.state_dict(), output_path)
-                elif gpu_mode == 1:
+    print("Training Start")
+    for epoch in range(args.epochs):
+        output_path = args.output_path + f"{args.save_prefix}_ep{epoch}"
+        trainer.train(epoch, output_path=output_path)
+        # trainer.train(epoch)
+        if epoch % args.save_freq == 0:
+            # Saving the current BERT model on file_path
+            if gpu_mode == 0:
+                torch.save(model.state_dict(), output_path)
+            elif gpu_mode == 1:
+                torch.save(model.module.state_dict(), output_path)
+            elif gpu_mode == 2:
+                if distributed.get_rank() == 0:
                     torch.save(model.module.state_dict(), output_path)
-                elif gpu_mode == 2:
-                    if distributed.get_rank() == 0:
-                        torch.save(model.module.state_dict(), output_path)
-                # model.to(device)
-                print("EP:%d Model Saved on:" % epoch, output_path)
-
-            if test_data_loader is not None:
-                trainer.test(epoch)
-    else:
-        print("run validation only")
-        trainer.test(0)
+            # model.to(device)
+            print("EP:%d Model Saved on:" % epoch, output_path)
 
 
 if __name__ == '__main__':

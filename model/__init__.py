@@ -6,5 +6,6 @@ from .ppi_model import FTPPI, FTPPIOneHot
 from .transformer import Transformer
 from .prot_eng_model import FTProtEng
 from .seq_gpt_model import SeqLM
+from .prolm_span import ProLM
 
 

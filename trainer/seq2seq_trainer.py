@@ -4,6 +4,8 @@ from torch.optim import Adam, SGD
 from torch.utils.data import DataLoader
 from optim_schedule import ScheduledOptim
 from tqdm import tqdm
+import pandas as pd
+import numpy as np
 
 
 class Seq2SeqTrainer:
@@ -13,7 +15,8 @@ class Seq2SeqTrainer:
                  warmup_steps=1000,
                  lr_scheduler='decay',
                  device='cpu',
-                 log_freq=10):
+                 log_freq=10,
+                 label_smoothing=True):
         """
         :param train_dataloader: train dataset data loader
         :param test_dataloader: test dataset data loader [can be None]
@@ -42,7 +45,19 @@ class Seq2SeqTrainer:
             self.optim_schedule = ScheduledOptim(self.optim, n_warmup_steps=warmup_steps, init_lr=lr)
 
         # Using Negative Log Likelihood Loss function for predicting the masked_token
-        self.criterion = nn.NLLLoss(ignore_index=0)
+        self.label_smoothing = label_smoothing
+        if label_smoothing:
+            print('applying label smoothing')
+            self.smooth_prob = 0.5
+            self.criterion = nn.KLDivLoss(reduction='sum')
+            df = pd.read_csv('data/blosum_prob.csv', dtype=np.float32)
+            # vocab = 23, pad_index = 0, 2 other indexes
+            submat = np.eye(20, dtype=np.float32) * self.smooth_prob + (1 - self.smooth_prob) * df.values
+            submat = np.pad(submat, ((1, 2), (1, 2)), 'constant', constant_values=0)
+            self.submat = torch.tensor(submat, device=self.device, requires_grad=False)
+        else:
+            # self.criterion = nn.NLLLoss(ignore_index=0, reduction='sum')
+            self.criterion = nn.NLLLoss(ignore_index=0)
 
         self.log_freq = log_freq
         self.writer = writer
@@ -54,6 +69,17 @@ class Seq2SeqTrainer:
 
     def test(self, epoch):
         self.iteration(epoch, self.test_data, train=False)
+
+    # def _smooth_label(self, y):
+    #     """
+    #     smooth label based on the BLOSUM62 matrix
+    #     :param y: (N, T)
+    #     :return ys: (N, T, E)
+    #     """
+    #
+    #     ys = self.submat[y]
+    #
+    #     return ys
 
     def iteration(self, epoch, data_loader, train=True, output_path=None):
         """
@@ -78,10 +104,15 @@ class Seq2SeqTrainer:
 
             seq_output = self.model.forward(data["src"], data["tgt_x"])
 
-            # NLLLoss of predicting masked token word
-            # (N, T, E) --> (N, E, T)
-            # print(seq_output.transpose(1, 2))
-            loss = self.criterion(seq_output.transpose(1, 2), data["tgt_y"])
+            if self.label_smoothing:
+                # ys = self._smooth_label(data["tgt_y"])
+                ys = self.submat[data["tgt_y"]]
+                loss = self.criterion(seq_output, ys)
+            else:
+                # NLLLoss of predicting masked token word
+                # (N, T, E) --> (N, E, T)
+                # print(seq_output.transpose(1, 2))
+                loss = self.criterion(seq_output.transpose(1, 2), data["tgt_y"])
 
             # 3. backward and optimization only in train
             if train:
@@ -120,6 +151,8 @@ class Seq2SeqTrainer:
                     output_path_step = output_path + f'_st{i // save_step}'
                     torch.save(self.model.module.state_dict(), output_path_step)
                     print(f"EP:{epoch} Step{i // save_step} Model Saved on {output_path_step}")
+
+            # torch.cuda.empty_cache()
 
         # print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader)
         print("EP%d_%s, avg_loss=" % (epoch, str_code), avg_loss / len_data_loader, "total_acc=",

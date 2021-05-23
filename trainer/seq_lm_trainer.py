@@ -31,13 +31,13 @@ class SeqLMTrainer:
         self.test_data = test_dataloader
 
         # Setting the Adam optimizer with hyper-param
-        self.optim = Adam(self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay)
+        self.optim = Adam(self.model.parameters(), lr=lr, betas=betas, weight_decay=weight_decay, eps=1e-05)
         # self.optim = SGD(self.model.parameters(), lr=lr, weight_decay=weight_decay)
 
         self.lr_scheduler = lr_scheduler
         if self.lr_scheduler == 'cycle':
             self.optim_schedule = torch.optim.lr_scheduler.CyclicLR(self.optim, base_lr=3e-5, max_lr=1e-3,
-                                                                    step_size_up=100, cycle_momentum=False)
+                                                                    step_size_up=3000, cycle_momentum=False)
         else:
             self.optim_schedule = ScheduledOptim(self.optim, n_warmup_steps=warmup_steps, init_lr=lr)
 
@@ -71,12 +71,15 @@ class SeqLMTrainer:
         avg_loss = 0.0
         total_correct = 0
         total_element = 0
-        len_data_loader = len(data_loader)
+        # len_data_loader = len(data_loader.dataset)
+        # how to record number of steps for iter dataset?
+        len_data_loader = 12265
 
         for i, data in tqdm(enumerate(data_loader)):
-            data = {key: value.to(self.device) for key, value in data.items()}
+            # squeeze() for iter dataset with batchsize=1
+            data = {key: value.squeeze().to(self.device) for key, value in data.items()}
 
-            seq_output = self.model.forward(data["seq_x"])
+            seq_output = self.model.forward(data["seq_x"])  #
 
             # NLLLoss of predicting masked token word
             # (N, T, E) --> (N, E, T)

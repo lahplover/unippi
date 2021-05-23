@@ -4,66 +4,6 @@ import torch.nn.functional as F
 import math
 
 
-
-# B = batch_size, H = hidden_size, M = block_size, L = attn_span
-
-
-def _skew(X, pad_value):
-    """shift every row 1 step to right"""
-    # X = B x M x L
-    B, M, L = X.size()
-    X = F.pad(X, (0, M - L + 1), value=pad_value)  # B x M x (M+1)
-    X = X.view(B, -1)  # B x MM+M
-    X = X[:, :-M]  # B x MM
-    X = X.view(B, M, M)  # B x M x M
-    return X
-
-
-def _unskew(X, L):
-    """reverse _skew operation"""
-    # X = B x M x M
-    B, M, M = X.size()
-    X = X.view(B, -1)  # B x MM
-    X = F.pad(X, (0, M))  # B x (MM+M)
-    X = X.view(B, M, M + 1)  # B x M x (M+1)
-    X = X[:, :, :L]  # B x M x L
-    return X
-
-
-class SeqAttention(nn.Module):
-    """Sequential self-attention layer.
-    Each token will attend to its previous fixed number of steps.
-    Note that attention doesn't include the current step itself.
-    """
-    def __init__(self, hidden_size, attn_span,
-                 dropout):
-        nn.Module.__init__(self)
-        self.hidden_size = hidden_size # size of a single head
-        self.attn_span = attn_span
-
-
-    def forward(self, query, key, value, key_pe):
-        # query size = B x M x H
-        # key, value sizes = B x M x H
-
-        # compute attention from context
-        # B x M (dest) x (M+L) (src)
-        attn_cont = torch.matmul(query, key.transpose(-1, -2))
-        attn_cont = _unskew(attn_cont)  # B x M x L
-
-        # compute the effect of position embedding
-        attn_pos = torch.matmul(query, key_pe)  # B x M x L_pos
-        attn = attn_cont + attn_pos
-
-        attn = attn / math.sqrt(self.hidden_size)  # B x M X L_pos
-        attn = F.softmax(attn, dim=-1)
-
-        attn_cont = _skew(attn, 0)  # B x M X (L+M)
-        out = torch.matmul(attn_cont, value)  # B x M x H
-
-        return out
-
-
 class TokenEmbedding(nn.Module):
     """
     """

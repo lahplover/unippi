@@ -60,7 +60,8 @@ class DatasetBlock(Dataset):
 
 
 if __name__ == '__main__':
-    dataset = DatasetBlock('data/seq_block_pair_small.txt', seq_len=32)
+    # dataset = DatasetBlock('data/seq_block_pair_small.txt', seq_len=32)
+    dataset = DatasetBlock('data/seq_split_small.txt', seq_len=50)
 
 
 
